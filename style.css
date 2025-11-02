@@ -1,0 +1,102 @@
+:root{
+  --bg:#000;
+  --fg:#fff;
+  --accent:#00e0ff;
+  --accent2:#7a5fff;
+}
+
+*{ box-sizing:border-box; }
+html,body{
+  margin:0;
+  height:100%;
+  background:var(--bg);
+  color:var(--fg);
+  font-family: "Noto Sans KR", system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+}
+
+/* 3D 캔버스는 항상 고정 */
+#bg{
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display:block;
+}
+
+/* 상단 타이틀 */
+.site-header{
+  position: fixed;
+  top:12px; left:16px;
+  z-index: 2;
+  pointer-events: none;
+}
+.site-header h1{
+  margin:0; font-size:14px; letter-spacing:0.2em; color:#b7c6ff; opacity:.8;
+}
+
+/* 스크롤 영역 */
+#scroller{
+  position: relative;
+  z-index: 1; /* 캔버스 위에 */
+  scroll-snap-type: y mandatory;
+  overflow-y: auto;
+  height: 100vh;
+}
+
+/* 각 섹션은 한 화면 크기 */
+.step{
+  height: 100vh;
+  display: grid;
+  place-items: center;
+  scroll-snap-align: start;
+  padding: 40px 20px;
+  background: transparent;
+}
+.step .inner{
+  max-width: 720px;
+  text-align: center;
+  background: rgba(0,0,0,.36);
+  border: 1px solid rgba(0,224,255,.35);
+  border-radius: 14px;
+  padding: 28px 24px;
+  backdrop-filter: blur(6px);
+  box-shadow: 0 0 40px rgba(0,224,255,.12);
+}
+.step h2,.step h3{ margin:0 0 12px 0; }
+.step p{ margin:0; opacity:.9; line-height:1.6; }
+
+.intro .inner, .outro .inner{
+  border-color: rgba(122,95,255,.45);
+  box-shadow: 0 0 40px rgba(122,95,255,.18);
+}
+
+/* 설명 패널 */
+#infoPanel{
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(90vw, 560px);
+  background: rgba(0,0,0,.55);
+  border:1px solid var(--accent);
+  border-radius: 12px;
+  padding: 16px 18px;
+  z-index: 3;
+  backdrop-filter: blur(8px);
+  box-shadow: 0 0 30px rgba(0,224,255,.18);
+}
+#infoTitle{ margin: 0 0 6px 0; font-size: 18px; color:#dff9ff; }
+#infoDesc{ margin: 0; opacity:.92; }
+
+/* 모바일 타입 */
+@media (max-width: 768px){
+  .step .inner{ padding: 22px 18px; }
+  #infoTitle{ font-size: 16px; }
+  #infoDesc{ font-size: 14px; }
+}
+
+/* 모션 민감 사용자 */
+@media (prefers-reduced-motion: reduce) {
+  #scroller{ scroll-behavior: auto; }
+}
+
