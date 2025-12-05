@@ -1,162 +1,94 @@
 <!DOCTYPE html>
 <html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>자바기말뜌아아아아</title>
-  <style>
-    body {
-      margin: 0;
-      overflow: hidden;
-      background-color: #000; 
-    }
-    #canvas {
-      display: block;
-      width: 100vw;
-      height: 100vh;
-    }
-  </style>
-</head>
-<body>
-  <canvas id="canvas"></canvas>
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0"
+    />
+    <title>Neuroverse</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <canvas id="canvas"></canvas>
 
-  <script type="importmap">
-    {
-      "imports": {
-        "three": "https://cdn.jsdelivr.net/npm/three@0.141.0/build/three.module.js",
-        "GLTFLoader": "https://cdn.jsdelivr.net/npm/three@0.141.0/examples/jsm/loaders/GLTFLoader.js",
-        "OrbitControls": "https://cdn.jsdelivr.net/npm/three@0.141.0/examples/jsm/controls/OrbitControls.js"
-      }
-    }
-  </script>
+    <!-- 클릭 진입용 오버레이 (텍스트 없이, 화면 아무 데나 클릭 → 진입) -->
+    <div id="start-screen"></div>
 
-  <script type="module">
-    import * as THREE from 'three';
-    import { GLTFLoader } from 'GLTFLoader';
-    import { OrbitControls } from 'OrbitControls';
-
-
-    const scene = new THREE.Scene();
-    const canvas = document.querySelector('#canvas');
-    const renderer = new THREE.WebGLRenderer({
-      canvas: canvas,
-      antialias: true
-    });
-    renderer.setSize(window.innerWidth, window.innerHeight);
-    renderer.setPixelRatio(window.devicePixelRatio);
-
-
-    const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 2000); 
-     camera.position.set(0, 0, 250)
-    const controls = new OrbitControls(camera, renderer.domElement);
-    controls.enableDamping = true;
-    controls.autoRotate = true;
-    controls.autoRotateSpeed = 0.3;
-    controls.target.set(0, 25, 0);
-
-    scene.background = new THREE.Color('#000000');
-    const ambientLight = new THREE.AmbientLight(0xffffff, 0.2);
-    scene.add(ambientLight);
-    const directionalLight = new THREE.DirectionalLight(0xffffff, 0.5);
-    directionalLight.position.set(1, 1, 1);
-    scene.add(directionalLight);
-    
-    let starfield;
-    function createStarfield() {
-      const starVertices = [];
-      for (let i = 0; i < 10000; i++) {
-        const x = THREE.MathUtils.randFloatSpread(1500);
-        const y = THREE.MathUtils.randFloatSpread(1500);
-        const z = THREE.MathUtils.randFloatSpread(1500);
-        starVertices.push(x, y, z);
-      }
-      
-      const starGeometry = new THREE.BufferGeometry();
-      starGeometry.setAttribute('position', new THREE.Float32BufferAttribute(starVertices, 3));
-      
-      const starMaterial = new THREE.PointsMaterial({
-        color: 0xffffff,
-        size: 0.5,
-        blending: THREE.AdditiveBlending,
-        transparent: true,
-        opacity: 0.8
-      });
-      
-      starfield = new THREE.Points(starGeometry, starMaterial);
-      scene.add(starfield);
-    }
-    createStarfield();
-
-
-    const loader = new GLTFLoader();
-    loader.load('models/scene.gltf', function(gltf){
-      
-      const model = gltf.scene;
-      const pointsGroup = new THREE.Group();
-      const linesGroup = new THREE.Group();
-
-      model.traverse(function (object) {
-        if (object.isMesh) {
-          const pointsMaterial = new THREE.PointsMaterial({
-            color: 0xffffff,
-            size: 0.03,
-            blending: THREE.AdditiveBlending,
-            transparent: true,
-            opacity: 0.75,
-            sizeAttenuation: true
-          });
-          const points = new THREE.Points(object.geometry, pointsMaterial);
-          pointsGroup.add(points);
-
-          const lineMaterial = new THREE.LineBasicMaterial({
-            color: 0xffffff,
-            transparent: true,
-            opacity: 0.1
-          });
-          const wireframeGeom = new THREE.WireframeGeometry(object.geometry);
-          const lines = new THREE.LineSegments(wireframeGeom, lineMaterial);
-          linesGroup.add(lines);
-
-          object.visible = false;
-        }
-      });
-      
-
-    pointsGroup.rotation.x = Math.PI / -2; // 점 그룹을 X축 기준으로 90도 회전
-      linesGroup.rotation.x = Math.PI / -2;  // 선 그룹도 똑같이 X축 기준으로 90도 회전
-
-
+<div id="ui-container">
   
-      scene.add(pointsGroup);
-      scene.add(linesGroup);
-      
-    }, undefined, function(error) {
-        console.error('An error happened while loading the model:', error);
-    });
-    
+  <!-- 메인 타이틀: 좌측 하단 -->
+  <div id="title-box">
+    <h1 class="main-title">NEURO<br />VERSE:</h1>
+    <p class="main-sub">
+      Where Brain Meets the Cosmos<br />
+      Exploring identity through neural pathways and memory clusters<br />
+      <span class="start-hint">Start to Click!</span>
+    </p>
+  </div>
 
-    function animate() {
-      requestAnimationFrame(animate);
+  <!-- 1인칭 게임 HUD 레이어 (진입 후 활성화) -->
+<div id="fp-ui">
+  <div class="fp-center">
+      <div class="fp-hex"></div>
+      <div class="fp-main-circle"></div>
+      <div class="fp-crosshair"></div>
+      <div class="fp-dot-grid"></div>
+  </div>
+
+  <div class="fp-side-frame left"></div>
+  <div class="fp-side-frame right"></div>
+
+  <div class="fp-bottom-bar"></div>
+</div>
 
 
-      if (starfield) {
-        starfield.rotation.x += 0.00005;
-        starfield.rotation.y += 0.00007;
+  <!-- 기존 HUD (좌측 상단 그대로) -->
+  <div id="hud">
+    <div id="distance-label">NODE DISTANCE: --</div>
+    <div id="controls-hint">
+      WASD: 이동 / 마우스: 시야 / 클릭: 기억 열기
+    </div>
+    <div id="clock"></div>
+  </div>
+
+  <!-- 좌측 상단 HUD 바로 아래 PARAM LAB (DEV CONSOLE) -->
+  <div id="dev-console">
+    <div class="dev-header">NEUROVERSE PARAM LAB</div>
+    <textarea id="dev-input">
+scene.bg("#020617")
+brain.moveTo(0, 0, 40)
+player.speed(0.25)
+stars.spin(0.00008, 0.00010)
+bounds.cage(60)
+    </textarea>
+    <button id="dev-run">RUN SCRIPT</button>
+  </div>
+
+  <!-- 노드 호버 시 뜨는 이미지 프리뷰 -->
+  <div id="node-preview" class="hidden">
+    <img id="node-preview-img" src="" alt="memory preview" />
+  </div>
+
+  <!-- 노드 클릭 시 뜨는 대시보드 -->
+  <div id="dashboard-overlay" class="hidden">
+    <div id="dashboard-content"></div>
+    <button id="close-dashboard">탐사 계속</button>
+  </div>
+</div>
+
+
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://cdn.jsdelivr.net/npm/three@0.141.0/build/three.module.js",
+          "GLTFLoader": "https://cdn.jsdelivr.net/npm/three@0.141.0/examples/jsm/loaders/GLTFLoader.js",
+          "OrbitControls": "https://cdn.jsdelivr.net/npm/three@0.141.0/examples/jsm/controls/OrbitControls.js",
+          "gsap": "https://cdn.jsdelivr.net/npm/gsap@3.12.5/all.js"
+        }
       }
+    </script>
 
-      controls.update();
-      renderer.render(scene, camera);
-    }
-    animate();
-
-
-    function onWindowResize() {
-      camera.aspect = window.innerWidth / window.innerHeight;
-      camera.updateProjectionMatrix();
-      renderer.setSize(window.innerWidth, window.innerHeight);
-    }
-    window.addEventListener('resize', onWindowResize);
-
-  </script>
-</body>
+    <script type="module" src="script.js"></script>
+  </body>
 </html>
