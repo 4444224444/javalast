@@ -27,55 +27,174 @@
     </p>
   </div>
 
-  <!-- 1인칭 게임 HUD 레이어 (진입 후 활성화) -->
+<!-- 1인칭 게임 HUD 레이어 (진입 후 활성화) -->
 <div id="fp-ui">
-  <div class="fp-center">
-      <div class="fp-hex"></div>
-      <div class="fp-main-circle"></div>
-      <div class="fp-crosshair"></div>
-      <div class="fp-dot-grid"></div>
+  <!-- 화면 전체 비네트 + 스캔 느낌 -->
+  <div class="fp-vignette"></div>
+  <div class="fp-scanline"></div>
+
+  <!-- 중앙 에임/카메라 UI -->
+  <div class="fp-reticle">
+    <div class="fp-reticle-ring"></div>
+    <div class="fp-reticle-lines fp-reticle-lines-h"></div>
+    <div class="fp-reticle-lines fp-reticle-lines-v"></div>
+    <div class="fp-reticle-dot"></div>
   </div>
 
-  <div class="fp-side-frame left"></div>
-  <div class="fp-side-frame right"></div>
+  <!-- 모서리 프레임들 -->
+  <div class="fp-corner fp-corner-tl">
+    <span class="fp-corner-label"> <div id="clock"></div></span>
+  </div>
+  <div class="fp-corner fp-corner-tr">
+    <span class="fp-corner-text">CAM: INTERNAL · FOV 50°</span>
+  </div>
+  <div class="fp-corner fp-corner-bl">
+    <span class="fp-corner-text">PLAYER: 4444.22.4444</span>
+  </div>
+  <div class="fp-corner fp-corner-br">
+    <span class="fp-corner-text">MODE: MEMORY PROBE</span>
+  </div>
 
-  <div class="fp-bottom-bar"></div>
+<!-- 우측 COORD 패널 -->
+<div class="fp-side-panel fp-side-right">
+  <div class="fp-side-title">COORD</div>
+  <div class="fp-side-line">
+    <span>X</span>
+    <span id="hud-x">0.0</span>
+  </div>
+  <div class="fp-side-line">
+    <span>Y</span>
+    <span id="hud-y">0.0</span>
+  </div>
+  <div class="fp-side-line">
+    <span>Z</span>
+    <span id="hud-z">0.0</span>
+  </div>
+  <div class="fp-side-line fp-side-line-small">
+    <span>DEPTH</span>
+    <span id="hud-depth">—</span>
+  </div>
+  <div class="fp-side-line fp-side-line-small">
+    <span>DIST</span>
+    <span id="hud-distance">NODE —</span>
+  </div>
 </div>
 
 
-  <!-- 기존 HUD (좌측 상단 그대로) -->
-  <div id="hud">
-    <div id="distance-label">NODE DISTANCE: --</div>
-    <div id="controls-hint">
-      WASD: 이동 / 마우스: 시야 / 클릭: 기억 열기
-    </div>
-    <div id="clock"></div>
-  </div>
+<div id="node-proximity-alert" class="node-proximity-hud">
+  NODE SCAN: IDLE
+</div>
 
-  <!-- 좌측 상단 HUD 바로 아래 PARAM LAB (DEV CONSOLE) -->
-  <div id="dev-console">
-    <div class="dev-header">NEUROVERSE PARAM LAB</div>
-    <textarea id="dev-input">
+
+
+  <!-- 하단 헬프 바 -->
+  <div class="fp-bottom-bar">
+    <div class="fp-bottom-chip">WASD · MOVE</div>
+    <div class="fp-bottom-chip">MOUSE · LOOK</div>
+    <div class="fp-bottom-chip">CLICK NODE · OPEN MEMORY DASHBOARD</div>
+
+    <!-- 🔊 음악 토글 칩 (맨 오른쪽) -->
+    <button
+  class="fp-bottom-chip fp-music-toggle"
+  id="music-toggle"
+  type="button"
+  data-state="off"
+>
+  <span class="music-label">BGM</span>
+  <span class="music-icon">
+    <span class="bar bar-1"></span>
+    <span class="bar bar-2"></span>
+    <span class="bar bar-3"></span>
+  </span>
+</button>
+
+  </div>
+</div>
+
+<!-- 좌측 상단 HUD 바로 아래 PARAM LAB (DEV CONSOLE) -->
+<div id="dev-console">
+  <div class="dev-header">NEUROVERSE PARAM LAB</div>
+  <textarea id="dev-input">
 scene.bg("#020617")
 brain.moveTo(0, 0, 40)
 player.speed(0.25)
 stars.spin(0.00008, 0.00010)
 bounds.cage(60)
-    </textarea>
-    <button id="dev-run">RUN SCRIPT</button>
-  </div>
+  </textarea>
+  <button id="dev-run">RUN SCRIPT</button>
+</div>
 
-  <!-- 노드 호버 시 뜨는 이미지 프리뷰 -->
-  <div id="node-preview" class="hidden">
-    <img id="node-preview-img" src="" alt="memory preview" />
-  </div>
 
-  <!-- 노드 클릭 시 뜨는 대시보드 -->
-  <div id="dashboard-overlay" class="hidden">
-    <div id="dashboard-content"></div>
-    <button id="close-dashboard">탐사 계속</button>
+
+<!-- 노드 클릭 시 뜨는 대시보드 -->
+<div id="dashboard-overlay" class="hidden">
+  <div id="dashboard-content">
+    <!-- 상단 메타 영역 -->
+    <div class="dashboard-meta">
+      <div class="dashboard-meta-label">MEMORY NODE</div>
+      <div id="dashboard-node-name">NODE</div>
+    </div>
+
+    <!-- 본문 그리드: 왼쪽(사진+텍스트) / 오른쪽(3박스) -->
+    <div class="dashboard-grid">
+      <!-- ⬅ 왼쪽 컬럼: 사진 + 텍스트 -->
+      <div class="dash-left">
+        <!-- 사진 뷰어 -->
+        <div class="dash-photo-panel">
+          <img
+            id="dashboard-photo"
+            src=""
+            alt="Memory visual"
+          />
+        </div>
+
+        <!-- 텍스트 영역 (요약 / 코멘트 등) -->
+        <div class="dash-text-panel">
+          <h2 id="dashboard-main-title">TITLE</h2>
+          <p id="dashboard-main-text">
+            <!-- 노드 기본 설명, 한줄 요약 같은 것 들어갈 자리 -->
+          </p>
+        </div>
+      </div>
+
+      <!-- ➡ 오른쪽 컬럼: 3개의 카드 -->
+      <div class="dash-right">
+        <!-- (1) 타이틀 / 태그 박스 -->
+        <section class="dash-card dash-card-title">
+          <div class="dash-card-label">NODE PROFILE</div>
+          <h3 id="dash-node-title">Node title</h3>
+          <div id="dash-node-tags" class="dash-node-tags">
+            <!-- JS에서 태그 뱃지들 넣을 예정 -->
+          </div>
+        </section>
+
+        <!-- (2) 설명 박스 (기존 node.userData.content 들어갈 자리) -->
+        <section class="dash-card dash-card-desc">
+          <div class="dash-card-label">DESCRIPTION</div>
+          <div class="dashboard-body" id="dashboard-body">
+            <!-- JS에서 node.userData.content 그대로 인젝션 -->
+          </div>
+        </section>
+
+        <!-- (3) 미니 노드 박스 -->
+        <section class="dash-card dash-card-node">
+          <div class="dash-card-label">MEMORY ORBIT</div>
+          <div class="node-orbit">
+            <div class="node-orbit-core"></div>
+            <div class="node-orbit-labels" id="dash-node-orbit-labels">
+              <!-- JS에서 키워드 라벨들 원형 배치 -->
+            </div>
+          </div>
+        </section>
+      </div>
+    </div>
+
+    <!-- 닫기 버튼 -->
+    <button id="close-dashboard">RESUME EXPLORATION</button>
   </div>
 </div>
+
+
 
 
     <script type="importmap">

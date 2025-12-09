@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0"
+    />
+    <title>Neuroverse</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <canvas id="canvas"></canvas>
+
+    <!-- 클릭 진입용 오버레이 (텍스트 없이, 화면 아무 데나 클릭 → 진입) -->
+    <div id="start-screen"></div>
+
+<div id="ui-container">
+  
+  <!-- 메인 타이틀: 좌측 하단 -->
+  <div id="title-box">
+    <h1 class="main-title">NEURO<br />VERSE:</h1>
+    <p class="main-sub">
+      Where Brain Meets the Cosmos<br />
+      Exploring identity through neural pathways and memory clusters<br />
+      <span class="start-hint">Start to Click!</span>
+    </p>
+  </div>
+
+  <!-- 1인칭 게임 HUD 레이어 (진입 후 활성화) -->
+<div id="fp-ui">
+  <div class="fp-center">
+      <div class="fp-hex"></div>
+      <div class="fp-main-circle"></div>
+      <div class="fp-crosshair"></div>
+      <div class="fp-dot-grid"></div>
+  </div>
+
+  <div class="fp-side-frame left"></div>
+  <div class="fp-side-frame right"></div>
+
+  <div class="fp-bottom-bar"></div>
+</div>
+
+
+  <!-- 기존 HUD (좌측 상단 그대로) -->
+  <div id="hud">
+    <div id="distance-label">NODE DISTANCE: --</div>
+    <div id="controls-hint">
+      WASD: 이동 / 마우스: 시야 / 클릭: 기억 열기
+    </div>
+    <div id="clock"></div>
+  </div>
+
+  <!-- 좌측 상단 HUD 바로 아래 PARAM LAB (DEV CONSOLE) -->
+  <div id="dev-console">
+    <div class="dev-header">NEUROVERSE PARAM LAB</div>
+    <textarea id="dev-input">
+scene.bg("#020617")
+brain.moveTo(0, 0, 40)
+player.speed(0.25)
+stars.spin(0.00008, 0.00010)
+bounds.cage(60)
+    </textarea>
+    <button id="dev-run">RUN SCRIPT</button>
+  </div>
+
+  <!-- 노드 호버 시 뜨는 이미지 프리뷰 -->
+  <div id="node-preview" class="hidden">
+    <img id="node-preview-img" src="" alt="memory preview" />
+  </div>
+
+<!-- 노드 클릭 시 뜨는 대시보드 -->
+<div id="dashboard-overlay" class="hidden">
+  <div id="dashboard-content">
+    <!-- 상단 메타 영역 -->
+    <div class="dashboard-meta">
+      <div class="dashboard-meta-label">MEMORY NODE</div>
+      <div id="dashboard-node-name">NODE</div>
+    </div>
+
+    <!-- 본문 그리드: 왼쪽(사진+텍스트) / 오른쪽(3박스) -->
+    <div class="dashboard-grid">
+      <!-- ⬅ 왼쪽 컬럼: 사진 + 텍스트 -->
+      <div class="dash-left">
+        <!-- 사진 뷰어 -->
+        <div class="dash-photo-panel">
+          <img
+            id="dashboard-photo"
+            src=""
+            alt="Memory visual"
+          />
+        </div>
+
+        <!-- 텍스트 영역 (요약 / 코멘트 등) -->
+        <div class="dash-text-panel">
+          <h2 id="dashboard-main-title">TITLE</h2>
+          <p id="dashboard-main-text">
+            <!-- 노드 기본 설명, 한줄 요약 같은 것 들어갈 자리 -->
+          </p>
+        </div>
+      </div>
+
+      <!-- ➡ 오른쪽 컬럼: 3개의 카드 -->
+      <div class="dash-right">
+        <!-- (1) 타이틀 / 태그 박스 -->
+        <section class="dash-card dash-card-title">
+          <div class="dash-card-label">NODE PROFILE</div>
+          <h3 id="dash-node-title">Node title</h3>
+          <div id="dash-node-tags" class="dash-node-tags">
+            <!-- JS에서 태그 뱃지들 넣을 예정 -->
+          </div>
+        </section>
+
+        <!-- (2) 설명 박스 (기존 node.userData.content 들어갈 자리) -->
+        <section class="dash-card dash-card-desc">
+          <div class="dash-card-label">DESCRIPTION</div>
+          <div class="dashboard-body" id="dashboard-body">
+            <!-- JS에서 node.userData.content 그대로 인젝션 -->
+          </div>
+        </section>
+
+        <!-- (3) 미니 노드 박스 -->
+        <section class="dash-card dash-card-node">
+          <div class="dash-card-label">MEMORY ORBIT</div>
+          <div class="node-orbit">
+            <div class="node-orbit-core"></div>
+            <div class="node-orbit-labels" id="dash-node-orbit-labels">
+              <!-- JS에서 키워드 라벨들 원형 배치 -->
+            </div>
+          </div>
+        </section>
+      </div>
+    </div>
+
+    <!-- 닫기 버튼 -->
+    <button id="close-dashboard">RESUME EXPLORATION</button>
+  </div>
+</div>
+
+
+
+
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://cdn.jsdelivr.net/npm/three@0.141.0/build/three.module.js",
+          "GLTFLoader": "https://cdn.jsdelivr.net/npm/three@0.141.0/examples/jsm/loaders/GLTFLoader.js",
+          "OrbitControls": "https://cdn.jsdelivr.net/npm/three@0.141.0/examples/jsm/controls/OrbitControls.js",
+          "gsap": "https://cdn.jsdelivr.net/npm/gsap@3.12.5/all.js"
+        }
+      }
+    </script>
+
+    <script type="module" src="script.js"></script>
+  </body>
+</html>
