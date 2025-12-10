@@ -15,7 +15,7 @@
     <!-- 클릭 진입용 오버레이 (텍스트 없이, 화면 아무 데나 클릭 → 진입) -->
     <div id="start-screen"></div>
 
-<div id="ui-container">
+
   
   <!-- 메인 타이틀: 좌측 하단 -->
   <div id="title-box">
@@ -27,48 +27,104 @@
     </p>
   </div>
 
-  <!-- 1인칭 게임 HUD 레이어 (진입 후 활성화) -->
+<!-- 1인칭 게임 HUD 레이어 (진입 후 활성화) -->
 <div id="fp-ui">
-  <div class="fp-center">
-      <div class="fp-hex"></div>
-      <div class="fp-main-circle"></div>
-      <div class="fp-crosshair"></div>
-      <div class="fp-dot-grid"></div>
+  <!-- 화면 전체 비네트 + 스캔 느낌 -->
+  <div class="fp-vignette"></div>
+  <div class="fp-scanline"></div>
+
+  <!-- 중앙 에임/카메라 UI -->
+  <div class="fp-reticle">
+    <div class="fp-reticle-ring"></div>
+    <div class="fp-reticle-lines fp-reticle-lines-h"></div>
+    <div class="fp-reticle-lines fp-reticle-lines-v"></div>
+    <div class="fp-reticle-dot"></div>
   </div>
 
-  <div class="fp-side-frame left"></div>
-  <div class="fp-side-frame right"></div>
+  <!-- 모서리 프레임들 -->
+  <div class="fp-corner fp-corner-tl">
+    <span class="fp-corner-label"> <div id="clock"></div></span>
+  </div>
+  <div class="fp-corner fp-corner-tr">
+    <span class="fp-corner-text">CAM: INTERNAL · FOV 50°</span>
+  </div>
+  <div class="fp-corner fp-corner-bl">
+    <span class="fp-corner-text">PLAYER: 4444.22.4444</span>
+  </div>
+  <div class="fp-corner fp-corner-br">
+    <span class="fp-corner-text">MODE: MEMORY PROBE</span>
+  </div>
 
-  <div class="fp-bottom-bar"></div>
+<!-- 우측 COORD 패널 -->
+<div class="fp-side-panel fp-side-right">
+  <div class="fp-side-title">COORD</div>
+  <div class="fp-side-line">
+    <span>X</span>
+    <span id="hud-x">0.0</span>
+  </div>
+  <div class="fp-side-line">
+    <span>Y</span>
+    <span id="hud-y">0.0</span>
+  </div>
+  <div class="fp-side-line">
+    <span>Z</span>
+    <span id="hud-z">0.0</span>
+  </div>
+  <div class="fp-side-line fp-side-line-small">
+    <span>DEPTH</span>
+    <span id="hud-depth">—</span>
+  </div>
+  <div class="fp-side-line fp-side-line-small">
+    <span>DIST</span>
+    <span id="hud-distance">NODE —</span>
+  </div>
 </div>
 
 
-  <!-- 기존 HUD (좌측 상단 그대로) -->
-  <div id="hud">
-    <div id="distance-label">NODE DISTANCE: --</div>
-    <div id="controls-hint">
-      WASD: 이동 / 마우스: 시야 / 클릭: 기억 열기
-    </div>
-    <div id="clock"></div>
-  </div>
+<div id="node-proximity-alert" class="node-proximity-hud">
+  NODE SCAN: IDLE
+</div>
 
-  <!-- 좌측 상단 HUD 바로 아래 PARAM LAB (DEV CONSOLE) -->
-  <div id="dev-console">
-    <div class="dev-header">NEUROVERSE PARAM LAB</div>
-    <textarea id="dev-input">
+
+
+  <!-- 하단 헬프 바 -->
+  <div class="fp-bottom-bar">
+    <div class="fp-bottom-chip">WASD · MOVE</div>
+    <div class="fp-bottom-chip">MOUSE · LOOK</div>
+    <div class="fp-bottom-chip">CLICK NODE · OPEN MEMORY DASHBOARD</div>
+
+    <!-- 🔊 음악 토글 칩 (맨 오른쪽) -->
+    <button
+  class="fp-bottom-chip fp-music-toggle"
+  id="music-toggle"
+  type="button"
+  data-state="off"
+>
+  <span class="music-label">BGM</span>
+  <span class="music-icon">
+    <span class="bar bar-1"></span>
+    <span class="bar bar-2"></span>
+    <span class="bar bar-3"></span>
+  </span>
+</button>
+
+  </div>
+</div>
+
+<!-- 좌측 상단 HUD 바로 아래 PARAM LAB (DEV CONSOLE) -->
+<div id="dev-console">
+  <div class="dev-header">NEUROVERSE PARAM LAB</div>
+  <textarea id="dev-input">
 scene.bg("#020617")
 brain.moveTo(0, 0, 40)
 player.speed(0.25)
 stars.spin(0.00008, 0.00010)
 bounds.cage(60)
-    </textarea>
-    <button id="dev-run">RUN SCRIPT</button>
-  </div>
+  </textarea>
+  <button id="dev-run">RUN SCRIPT</button>
+</div>
 
-  <!-- 노드 호버 시 뜨는 이미지 프리뷰 -->
-  <div id="node-preview" class="hidden">
-    <img id="node-preview-img" src="" alt="memory preview" />
-  </div>
+
 
 <!-- 노드 클릭 시 뜨는 대시보드 -->
 <div id="dashboard-overlay" class="hidden">

@@ -12,6 +12,7 @@ let controls;
 let starfield;
 let starSpeed = { x: 0.00005, y: 0.00007 }; // 별 회전 속도
 let pointsGroup; // 뇌 포인트 클라우드
+let brainRoot = null;
 
 // 🔊 BGM 관련
 let bgm = null;
@@ -22,6 +23,31 @@ let musicIcon = null;
 const clickableNodes = []; // 기억 노드들 (Raycasting 대상)
 const keywordLabelGroups = []; // 각 노드별 키워드 라벨 모음
 const _tmpWorldPos = new THREE.Vector3();
+// 🔹 스크롤 섹션별 브레인 포즈 (카메라는 고정, 브레인만 슬라이드)
+const SCENE_POSES = {
+  hero: {
+    brainPos: { x: -20, y: -20, z: 200 },      // 화면 중앙
+    brainRot: { x: -Math.PI / 2, y: 1.5, z: 1 },
+  },
+  sec1: {
+    brainPos: { x: -130, y: -40, z: 220 },    // 화면 왼쪽으로
+    brainRot: { x: -Math.PI / 2, y: 2, z: 2 },
+  },
+  sec2: {
+    brainPos: { x: 130, y: 40, z: 220 },     // 화면 오른쪽으로
+    brainRot: { x: -Math.PI / 1, y: 4, z: 2 },
+  },
+  sec3: {
+    brainPos: { x: 0, y: -20, z: 200 },     // 다시 중앙 + 살짝 위로
+    brainRot: { x: -Math.PI / 2, y: 0.0, z: 0.0 },
+  },
+};
+
+const EXPLORATION_POSE = {
+  pos:  { x: 0, y: 0, z: 0 },                // 뇌를 딱 중앙에
+  rot:  { x: -Math.PI / 2, y: 0, z: 0 },   // 위에서 살짝 기울어진 느낌
+  scale: 2,                               // 조금만 키워서 꽉 찬 느낌
+};
 
 // WASD 상태
 const keyState = {
@@ -36,13 +62,20 @@ let moveSpeed = 0.3;
 
 // 카메라가 돌아다닐 수 있는 뇌 안쪽 범위
 const BOUNDS = {
-  x: 80,
-  y: 80,
-  z: 80,
+  x: 220,
+  y: 180,
+  z: 220,
 };
 
 const isDashboardOpen = { value: false }; // 대시보드 열려 있을 때 이동/클릭 막기용
 const TARGET_POSITION = new THREE.Vector3(0, 0, 50); // 줌인 후 카메라 위치
+
+// 🔹 스크롤-씬용 상태
+let isExploring = false; // 자유 탐사 모드 진입 플래그
+let scrollSceneObserver = null; // 지금은 안 쓰지만 남겨둠 (startExploration에서 disconnect만 함)
+
+// 기억 노드 생성 여부 (3D 진입 후에만 만들기)
+let memoryNodesCreated = false;
 
 // Raycaster (노드 클릭용)
 const raycaster = new THREE.Raycaster();
@@ -57,6 +90,13 @@ let miniNodeRoot = null;
 // 🔹 요약 텍스트 타이핑 타이머
 let summaryTypeTimer = null;
 
+let currentLobeId = null;
+let lobeBannerTimer = null;
+
+
+
+
+
 // 🔹 HUD DOM 요소 (우측 패널 + 좌측 텍스트)
 const hudX = document.getElementById("hud-x");
 const hudY = document.getElementById("hud-y");
@@ -66,6 +106,57 @@ const hudDistance = document.getElementById("hud-distance");
 const distanceLabel = document.getElementById("distance-label");
 const sidePanel = document.querySelector(".fp-side-panel");
 const nodeProximityHud = document.getElementById("node-proximity-alert");
+// 🔹 엽 배너 DOM
+const lobeBanner = document.getElementById("lobe-banner");
+
+
+// 🔹 뇌 영역(엽) 정의
+const LOBES = {
+  frontal: {
+    id: "frontal",
+    label: "FRONTAL LOBE // 전두엽",
+    // 전두엽용 노드 위치 (대충 앞쪽 + 약간 위) → 나중에 숫자 조절해도 됨
+    nodePos: new THREE.Vector3(0, 25, 30),
+  },
+  occipital: {
+    id: "occipital",
+    label: "OCCIPITAL LOBE // 후두엽",
+    nodePos: new THREE.Vector3(0, 25, -30),
+  },
+  parietal: {
+    id: "parietal",
+    label: "PARIETAL LOBE // 두정엽",
+    nodePos: new THREE.Vector3(0, 45, 0),
+  },
+  temporal: {
+    id: "temporal",
+    label: "TEMPORAL LOBE // 측두엽",
+    nodePos: new THREE.Vector3(0, -5, 0),
+  },
+};
+
+
+
+
+
+// ===============================
+// 0.3 dev-console 보정 함수
+// ===============================
+function ensureDevConsoleOnTop() {
+  const devConsole = document.getElementById("dev-console");
+  if (!devConsole) return null;
+
+  // site-shell 같은 래퍼 안에 있으면 강제로 body로 이동
+  if (devConsole.parentElement !== document.body) {
+    document.body.appendChild(devConsole);
+  }
+
+  devConsole.style.position = "fixed";
+  devConsole.style.zIndex = "9999";
+  devConsole.style.display = "block";
+
+  return devConsole;
+}
 
 // ===============================
 // 1. 초기화 & 루프 시작
@@ -85,55 +176,61 @@ function init() {
     overlay.style.opacity = 0;
   }
 
-  
+  const devConsole = ensureDevConsoleOnTop();
+  if (devConsole) {
+    devConsole.style.opacity = 0;
+    devConsole.style.pointerEvents = "none";
+    devConsole.style.transform = "translateY(20px)";
+  }
+
+  // 🔊 음악 토글 셋업
   musicToggle = document.getElementById("music-toggle");
-if (musicToggle) {
-  musicIcon = musicToggle.querySelector(".music-icon");
+  if (musicToggle) {
+    musicIcon = musicToggle.querySelector(".music-icon");
 
-  bgm = new Audio("./audio/music.mp3");
-  bgm.loop = true;
-  bgm.volume = 0.5;
+    bgm = new Audio("./audio/music.mp3");
+    bgm.loop = true;
+    bgm.volume = 0.5;
 
-  // 초기 상태
-  isBgmOn = false;
-  musicToggle.dataset.state = "off";
+    // 초기 상태
+    isBgmOn = false;
+    musicToggle.dataset.state = "off";
 
-  musicToggle.addEventListener("click", (e) => {
-    e.stopPropagation();
+    musicToggle.addEventListener("click", (e) => {
+      e.stopPropagation();
 
-    // 살짝 눌리는 효과
-    if (musicIcon) {
-      musicIcon.style.opacity = 0.6;
-      musicIcon.style.transform = "scale(0.8)";
-    }
-
-    setTimeout(() => {
-      // 상태 먼저 토글
-      isBgmOn = !isBgmOn;
-      musicToggle.dataset.state = isBgmOn ? "on" : "off";
-
-      // BGM 재생/정지
-      if (bgm) {
-        if (isBgmOn) {
-          bgm.play().catch(() => {
-            console.warn("BGM 재생 실패");
-          });
-        } else {
-          bgm.pause();
-        }
-      }
-
-      // 아이콘 복귀
+      // 살짝 눌리는 효과
       if (musicIcon) {
-        musicIcon.style.opacity = 1;
-        musicIcon.style.transform = "scale(1)";
+        musicIcon.style.opacity = 0.6;
+        musicIcon.style.transform = "scale(0.8)";
       }
-    }, 120);
-  });
-}
 
+      setTimeout(() => {
+        // 상태 먼저 토글
+        isBgmOn = !isBgmOn;
+        musicToggle.dataset.state = isBgmOn ? "on" : "off";
 
-  // 🔻 여기부터는 기존 three.js 초기화
+        // BGM 재생/정지
+        if (bgm) {
+          if (isBgmOn) {
+            bgm.play().catch(() => {
+              console.warn("BGM 재생 실패");
+            });
+          } else {
+            bgm.pause();
+          }
+        }
+
+        // 아이콘 복귀
+        if (musicIcon) {
+          musicIcon.style.opacity = 1;
+          musicIcon.style.transform = "scale(1)";
+        }
+      }, 120);
+    });
+  }
+
+  // 🔻 three.js 초기화
   renderer = new THREE.WebGLRenderer({
     canvas,
     antialias: true,
@@ -141,6 +238,10 @@ if (musicToggle) {
   });
   renderer.setSize(window.innerWidth, window.innerHeight);
   renderer.setPixelRatio(window.devicePixelRatio);
+
+  // 🔦 전체 밝기 살짝 낮추기 (색은 유지)
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 0.7; // 숫자 낮을수록 전체 어두워짐
 
   if (canvas) {
     canvas.addEventListener("click", onCanvasClick);
@@ -176,7 +277,9 @@ if (musicToggle) {
   scene.add(directionalLight);
 
   createStarfield();
-  loadBrainModel();
+  loadBrainModel(); // 뇌 로딩 (스크롤 구간에서는 배경 느낌)
+  setupScrollScenes(); 
+
   startClock();
 
   window.addEventListener("resize", onWindowResize);
@@ -218,52 +321,37 @@ function createStarfield() {
 // ===============================
 const MEMORY_NODES = [
   {
-    name: "해마 (Frontal Lobe)",
-    position: new THREE.Vector3(10, 55, -40),
-    baseImage: "images/frontal_default.jpg",
-    descriptionHtml: `
-      <p>three.js로 처음 3D 씬을 만들던 순간, 카메라와 라이트, 메쉬를 하나씩 배치하며 
-      '브라우저 안에 우주를 깐다'는 느낌을 처음으로 경험했던 구역.</p>
-    `,
+    // 전두엽
+    lobeId: "frontal",
+    position: LOBES.frontal.nodePos.clone(),
     keywords: [
       {
-        key: "threejs",
-        label: "three.js",
-        image: "images/frontal_threejs.jpg",
-        summary: "나의 3D 실험실, three.js와 함께한 뇌 탐사 기록.",
+        key: "cake",
+        label: "cake",             
+        image: "images/cake.png",
+        summary: "생일 때마다 커스텀 케이크를 챙겨 주는 친구들",
       },
       {
-        key: "webdev",
-        label: "web dev",
-        image: "images/frontal_web.jpg",
-        summary: "프론트엔드 전반의 설계와 구조를 고민하는 영역.",
-      },
-      {
-        key: "portfolio",
-        label: "portfolio",
-        image: "images/frontal_portfolio.jpg",
-        summary: "424 포트폴리오의 방향성과 톤을 구상하는 곳.",
+        key: "item",
+        label: "item",             
+        image: "images/item.png",
+        summary: "우정반지, 우정목걸이, 우정티셔츠, 우정모자, 우정타투... etc",
       },
     ],
-    summaryTitle: "FRONTAL LOBE // PLANNING",
+    summaryTitle: "FRONTAL LOBE",
     summaryText:
       "장기 계획, 사이드 프로젝트, 미래 설계와 관련된 기억들을 저장하는 영역.",
-    tags: ["planning", "project", "future"],
-    content: `
-      <h2>전두엽: 계획과 실행</h2>
-      <p>여기에 긴 설명 HTML...</p>
-    `,
+    
+    content: `<p>전두엽: 편도체가 감정 강도를 높여 저장 우선순위를 끌어올리고,
+전두엽은 그 경험을 ‘앞으로 어떤 관계를 이어갈지, 어떤 사람이 되고 싶은지’ 같은
+미래 방향성과 연결합니다. 그런 친구들에 관한 기억입니다.</p>`,
     coreStyle: {
       shape: "sphere",
-      size: 0.75,
+      size: 0.8,
       color: 0x38bdf8,
       opacity: 0.45,
     },
-    satelliteStyle: {
-      color: 0x66d9ff,
-      size: 0.16,
-      opacity: 0.85,
-    },
+    satelliteStyle: { color: 0x66d9ff, size: 0.16, opacity: 0.85 },
     labelStyle: {
       color: "#c6e6ff",
       fontSize: "11px",
@@ -271,289 +359,162 @@ const MEMORY_NODES = [
     },
   },
   {
-    name: "전두엽 (Frontal Lobe)",
-    position: new THREE.Vector3(10, 55, -40),
-    baseImage: "images/frontal_default.jpg",
-    descriptionHtml: `
-      <p>three.js로 처음 3D 씬을 만들던 순간, 카메라와 라이트, 메쉬를 하나씩 배치하며 
-      '브라우저 안에 우주를 깐다'는 느낌을 처음으로 경험했던 구역.</p>
-    `,
-    keywords: [
-      {
-        key: "threejs",
-        label: "three.js",
-        image: "images/frontal_threejs.jpg",
-        summary: "나의 3D 실험실, three.js와 함께한 뇌 탐사 기록.",
-      },
-      {
-        key: "webdev",
-        label: "web dev",
-        image: "images/frontal_web.jpg",
-        summary: "프론트엔드 전반의 설계와 구조를 고민하는 영역.",
-      },
-      {
-        key: "portfolio",
-        label: "portfolio",
-        image: "images/frontal_portfolio.jpg",
-        summary: "424 포트폴리오의 방향성과 톤을 구상하는 곳.",
-      },
-    ],
-    summaryTitle: "FRONTAL LOBE // PLANNING",
-    summaryText:
-      "장기 계획, 사이드 프로젝트, 미래 설계와 관련된 기억들을 저장하는 영역.",
-    tags: ["planning", "project", "future"],
-    content: `
-      <h2>전두엽: 계획과 실행</h2>
-      <p>여기에 긴 설명 HTML...</p>
-    `,
-    coreStyle: {
-      shape: "sphere",
-      size: 0.75,
-      color: 0x38bdf8,
-      opacity: 0.45,
+  // 두정엽
+  lobeId: "parietal",
+  position: LOBES.parietal.nodePos.clone(),
+  keywords: [
+    {
+      key: "home",
+      label: "home",
+      image: "images/home.png",
+      summary: "가장 좋아하는 공간을 뽑으라고 한다면 무조건 집, 침대. 작업할 때도 나는 침대 위에서 해서 친구한테 좀 일어나라는 잔소리를 많이 듣는다.",
     },
-    satelliteStyle: {
-      color: 0x66d9ff,
-      size: 0.16,
-      opacity: 0.85,
+    {
+      key: "school",
+      label: "school",
+      image: "images/school.png",
+      summary: "사실 우리 학교보다 야작을 더 많이 하러 가는 학교가 따로 있어서 살짝 웃기고 아이러니 하게 되었다. 그렇지만 이상하게 우리 학교 야작하기는 싫어서...",
     },
-    labelStyle: {
-      color: "#c6e6ff",
-      fontSize: "11px",
-      className: "label-frontal",
+    {
+      key: "bubble",
+      label: "bubble",
+      image: "images/bubble.png",
+      summary: "디자인관 5층 테라스는 보통 담배 피우는 곳으로 많이 생각하고 있겠지만 나는 비눗방울을 부는 곳이기도 했다. 햇빛 내리쬐고 바람 불 때 테라스에서 비눗방울 불면 재밌다.",
     },
+  ],
+  summaryTitle: "PARIETAL LOBE",
+  summaryText: "공간에 대한 기억이 저장되어 있는 영역",
+  content: `<p>두정엽: 크게 드라마틱하지도 않은데 그냥 당장 생각나는 곳들 </p>`,
+  coreStyle: {
+    shape: "sphere",
+    size: 0.8,
+    color: 0xfacc15,
+    opacity: 0.45,
   },
-  {
-    name: "전두엽 (Frontal Lobe)",
-    position: new THREE.Vector3(120, 55, -40),
-    baseImage: "images/frontal_default.jpg",
-    descriptionHtml: `
-      <p>three.js로 처음 3D 씬을 만들던 순간, 카메라와 라이트, 메쉬를 하나씩 배치하며 
-      '브라우저 안에 우주를 깐다'는 느낌을 처음으로 경험했던 구역.</p>
-    `,
-    keywords: [
-      {
-        key: "threejs",
-        label: "three.js",
-        image: "images/frontal_threejs.jpg",
-        summary: "나의 3D 실험실, three.js와 함께한 뇌 탐사 기록.",
-      },
-      {
-        key: "webdev",
-        label: "web dev",
-        image: "images/frontal_web.jpg",
-        summary: "프론트엔드 전반의 설계와 구조를 고민하는 영역.",
-      },
-      {
-        key: "portfolio",
-        label: "portfolio",
-        image: "images/frontal_portfolio.jpg",
-        summary: "424 포트폴리오의 방향성과 톤을 구상하는 곳.",
-      },
-    ],
-    summaryTitle: "FRONTAL LOBE // PLANNING",
-    summaryText:
-      "장기 계획, 사이드 프로젝트, 미래 설계와 관련된 기억들을 저장하는 영역.",
-    tags: ["planning", "project", "future"],
-    content: `
-      <h2>전두엽: 계획과 실행</h2>
-      <p>여기에 긴 설명 HTML...</p>
-    `,
-    coreStyle: {
-      shape: "sphere",
-      size: 0.75,
-      color: 0x38bdf8,
-      opacity: 0.45,
-    },
-    satelliteStyle: {
-      color: 0x66d9ff,
-      size: 0.16,
-      opacity: 0.85,
-    },
-    labelStyle: {
-      color: "#c6e6ff",
-      fontSize: "11px",
-      className: "label-frontal",
-    },
+  satelliteStyle: { color: 0xffe580, size: 0.16, opacity: 0.85 },
+  labelStyle: {
+    color: "#fff2c6",
+    fontSize: "11px",
+    className: "label-parietal",
   },
-  {
-    name: "전두엽 (Frontal Lobe)",
-    position: new THREE.Vector3(80, 55, -40),
-    baseImage: "images/frontal_default.jpg",
-    descriptionHtml: `
-      <p>three.js로 처음 3D 씬을 만들던 순간, 카메라와 라이트, 메쉬를 하나씩 배치하며 
-      '브라우저 안에 우주를 깐다'는 느낌을 처음으로 경험했던 구역.</p>
-    `,
-    keywords: [
-      {
-        key: "threejs",
-        label: "three.js",
-        image: "images/frontal_threejs.jpg",
-        summary: "나의 3D 실험실, three.js와 함께한 뇌 탐사 기록.",
-      },
-      {
-        key: "webdev",
-        label: "web dev",
-        image: "images/frontal_web.jpg",
-        summary: "프론트엔드 전반의 설계와 구조를 고민하는 영역.",
-      },
-      {
-        key: "portfolio",
-        label: "portfolio",
-        image: "images/frontal_portfolio.jpg",
-        summary: "424 포트폴리오의 방향성과 톤을 구상하는 곳.",
-      },
-    ],
-    summaryTitle: "FRONTAL LOBE // PLANNING",
-    summaryText:
-      "장기 계획, 사이드 프로젝트, 미래 설계와 관련된 기억들을 저장하는 영역.",
-    tags: ["planning", "project", "future"],
-    content: `
-      <h2>전두엽: 계획과 실행</h2>
-      <p>여기에 긴 설명 HTML...</p>
-    `,
-    coreStyle: {
-      shape: "sphere",
-      size: 0.75,
-      color: 0x38bdf8,
-      opacity: 0.45,
+},
+
+
+{
+  // 측두엽
+  lobeId: "temporal",
+  position: LOBES.temporal.nodePos.clone(),
+  keywords: [
+    {
+      key: "drum",
+      label: "drum",
+      image: "images/drum.png",
+      summary: "사실 내 전공은 원래 디자인이 아니라 음악이었다.",
     },
-    satelliteStyle: {
-      color: 0x66d9ff,
-      size: 0.16,
-      opacity: 0.85,
+    {
+      key: "concert",
+      label: "concert",
+      image: "images/concert.png",
+      summary: "이 콘서트 갔다 오고 우즈 오빠 탈덕했어요",
     },
-    labelStyle: {
-      color: "#c6e6ff",
-      fontSize: "11px",
-      className: "label-frontal",
-    },
+  ],
+  summaryTitle: "TEMPORAL LOBE",
+  summaryText: "청각적 사고가 얽혀 있는 영역",
+  content: `<p>측두엽: 청각, 즉 나에게는 음악과 연결되어 있는 기억이다</p>`,
+  coreStyle: {
+    shape: "sphere",
+    size: 0.8,
+    color: 0xfb7185,
+    opacity: 0.45,
   },
-  {
-    name: "전두엽 (Frontal Lobe)",
-    position: new THREE.Vector3(30, 55, -40),
-    baseImage: "images/frontal_default.jpg",
-    descriptionHtml: `
-      <p>three.js로 처음 3D 씬을 만들던 순간, 카메라와 라이트, 메쉬를 하나씩 배치하며 
-      '브라우저 안에 우주를 깐다'는 느낌을 처음으로 경험했던 구역.</p>
-    `,
-    keywords: [
-      {
-        key: "threejs",
-        label: "three.js",
-        image: "images/frontal_threejs.jpg",
-        summary: "나의 3D 실험실, three.js와 함께한 뇌 탐사 기록.",
-      },
-      {
-        key: "webdev",
-        label: "web dev",
-        image: "images/frontal_web.jpg",
-        summary: "프론트엔드 전반의 설계와 구조를 고민하는 영역.",
-      },
-      {
-        key: "portfolio",
-        label: "portfolio",
-        image: "images/frontal_portfolio.jpg",
-        summary: "424 포트폴리오의 방향성과 톤을 구상하는 곳.",
-      },
-    ],
-    summaryTitle: "FRONTAL LOBE // PLANNING",
-    summaryText:
-      "장기 계획, 사이드 프로젝트, 미래 설계와 관련된 기억들을 저장하는 영역.",
-    tags: ["planning", "project", "future"],
-    content: `
-      <h2>전두엽: 계획과 실행</h2>
-      <p>여기에 긴 설명 HTML...</p>
-    `,
-    coreStyle: {
-      shape: "sphere",
-      size: 0.75,
-      color: 0x38bdf8,
-      opacity: 0.45,
-    },
-    satelliteStyle: {
-      color: 0x66d9ff,
-      size: 0.16,
-      opacity: 0.85,
-    },
-    labelStyle: {
-      color: "#c6e6ff",
-      fontSize: "11px",
-      className: "label-frontal",
-    },
+  satelliteStyle: { color: 0xffa1b8, size: 0.16, opacity: 0.85 },
+  labelStyle: {
+    color: "#ffd6e1",
+    fontSize: "11px",
+    className: "label-temporal",
   },
-  {
-    name: "전두엽 (Frontal Lobe)",
-    position: new THREE.Vector3(50, 55, -40),
-    baseImage: "images/frontal_default.jpg",
-    descriptionHtml: `
-      <p>three.js로 처음 3D 씬을 만들던 순간, 카메라와 라이트, 메쉬를 하나씩 배치하며 
-      '브라우저 안에 우주를 깐다'는 느낌을 처음으로 경험했던 구역.</p>
-    `,
-    keywords: [
-      {
-        key: "threejs",
-        label: "three.js",
-        image: "images/frontal_threejs.jpg",
-        summary: "나의 3D 실험실, three.js와 함께한 뇌 탐사 기록.",
-      },
-      {
-        key: "webdev",
-        label: "web dev",
-        image: "images/frontal_web.jpg",
-        summary: "프론트엔드 전반의 설계와 구조를 고민하는 영역.",
-      },
-      {
-        key: "portfolio",
-        label: "portfolio",
-        image: "images/frontal_portfolio.jpg",
-        summary: "424 포트폴리오의 방향성과 톤을 구상하는 곳.",
-      },
-    ],
-    summaryTitle: "FRONTAL LOBE // PLANNING",
-    summaryText:
-      "장기 계획, 사이드 프로젝트, 미래 설계와 관련된 기억들을 저장하는 영역.",
-    tags: ["planning", "project", "future"],
-    content: `
-      <h2>전두엽: 계획과 실행</h2>
-      <p>여기에 긴 설명 HTML...</p>
-    `,
-    coreStyle: {
-      shape: "sphere",
-      size: 0.75,
-      color: 0x38bdf8,
-      opacity: 0.45,
+},
+
+
+{
+  // 후두엽
+  lobeId: "occipital",
+  position: LOBES.occipital.nodePos.clone(),
+  keywords: [
+    {
+      key: "firework",
+      label: "firework",
+      image: "images/firework.png",
+      summary: "일본 오사카 마츠리였는데 불꽃놀이를 정말 정말 정말 크게 한다 하늘이 무너질 것처럼 예뻤다",
     },
-    satelliteStyle: {
-      color: 0x66d9ff,
-      size: 0.16,
-      opacity: 0.85,
+    {
+      key: "star",
+      label: "star",
+      image: "images/start.png",
+      summary: "강원도에 놀러갔을 때 자고 있었는데 깨워서 밖에 나와보니 북두칠성이 있었다",
     },
-    labelStyle: {
-      color: "#c6e6ff",
-      fontSize: "11px",
-      className: "label-frontal",
+    {
+      key: "sky",
+      label: "sky",
+      image: "images/sky.png",
+      summary: "그냥 버스 타다가 봤는데 구름 예뻐서 끝",
     },
+  ],
+  summaryTitle: "OCCIPITAL LOBE",
+  summaryText: "시각 처리와 이미지 기반 사고의 기초 구조가 저장된 영역.",
+  content: `<p>시각 정보 해석과 이미지 기반 사고의 중심 처리 장치 눈으로 본 것들 중에 가장 기억에 남는 장소들이었다</p>`,
+  coreStyle: {
+    shape: "sphere",
+    size: 0.8,
+    color: 0x818cf8,
+    opacity: 0.45,
   },
-];
+  satelliteStyle: { color: 0xa5b4ff, size: 0.16, opacity: 0.85 },
+  labelStyle: {
+    color: "#dbe1ff",
+    fontSize: "11px",
+    className: "label-occipital",
+  },
+}
+
+]
+
 
 // ===============================
-// 4-A. 키워드 라벨 링 (씬 밖 UI용)
+// 4-A. 키워드 라벨 링 (노드 주변 UI용)
 // ===============================
 function setupKeywordRing(coreMesh, nodeData) {
   const keywords = nodeData.keywords;
   if (!keywords || keywords.length === 0) return;
 
-  const uiContainer = document.getElementById("ui-container") || document.body;
+  // 🔥 탐사 모드에서는 site-shell이 display:none 될 수 있으니까
+  //    라벨은 그냥 body에 직접 붙여버리는 게 안전함
+  const uiContainer = document.body;
+
   const group = { node: coreMesh, labels: [] };
   const labelOpts = nodeData.labelStyle || {};
-
   const count = keywords.length;
+
   for (let i = 0; i < count; i++) {
     const k = keywords[i];
 
-    const labelText = typeof k === "string" ? k : k.label;
-    const labelKey = typeof k === "string" ? k : k.key || k.label;
+    // label이 문자열 / 배열 둘 다 대응
+    let labelText;
+    if (typeof k === "string") {
+      labelText = k;
+    } else {
+      if (Array.isArray(k.label)) {
+        labelText = k.label[0] ?? "";
+      } else {
+        labelText = k.label ?? "";
+      }
+    }
+
+    const labelKey =
+      typeof k === "string"
+        ? k
+        : k.key || (Array.isArray(k.label) ? k.label[0] : k.label || "");
+
     const labelImage = typeof k === "string" ? null : k.image;
 
     const el = document.createElement("div");
@@ -568,6 +529,11 @@ function setupKeywordRing(coreMesh, nodeData) {
     if (labelOpts.color) el.style.color = labelOpts.color;
     if (labelOpts.fontSize) el.style.fontSize = labelOpts.fontSize;
 
+    // 기본 스타일 조금 안전빵으로
+    el.style.position = "absolute";
+    el.style.pointerEvents = "auto";
+    el.style.zIndex = "3000";
+
     uiContainer.appendChild(el);
 
     const angle = (i / count) * Math.PI * 2;
@@ -578,14 +544,25 @@ function setupKeywordRing(coreMesh, nodeData) {
 }
 
 // ===============================
-// 4-B. 키워드 라벨 위치 업데이트
+// 4-B. 키워드 라벨 위치 업데이트 (일렁이면서 노드 주변 공전)
 // ===============================
 function updateKeywordLabels(timeSec) {
   if (keywordLabelGroups.length === 0 || !camera) return;
 
+  // 🔥 추가: 탐사 모드 아니거나, 대시보드 열려 있으면 라벨 전부 숨김
+  if (!isExploring || isDashboardOpen.value) {
+    keywordLabelGroups.forEach((group) => {
+      group.labels.forEach(({ el }) => {
+        el.style.opacity = 0;
+      });
+    });
+    return;
+  }
+
   const halfW = window.innerWidth / 2;
   const halfH = window.innerHeight / 2;
 
+  // 밑에는 그대로 유지
   keywordLabelGroups.forEach((group) => {
     const { node, labels } = group;
 
@@ -593,7 +570,7 @@ function updateKeywordLabels(timeSec) {
 
     const camDist = camera.position.distanceTo(_tmpWorldPos);
 
-    if (camDist > 90) {
+    if (camDist > 260) {
       labels.forEach(({ el }) => {
         el.style.opacity = 0;
       });
@@ -601,6 +578,7 @@ function updateKeywordLabels(timeSec) {
     }
 
     const proj = _tmpWorldPos.clone().project(camera);
+
     if (proj.z > 1) {
       labels.forEach(({ el }) => {
         el.style.opacity = 0;
@@ -611,7 +589,7 @@ function updateKeywordLabels(timeSec) {
     const baseX = proj.x * halfW + halfW;
     const baseY = -proj.y * halfH + halfH;
 
-    const vis = THREE.MathUtils.clamp(1 - (camDist - 75) / 50, 0, 1);
+    const vis = THREE.MathUtils.clamp(1 - (camDist - 40) / 200, 0.15, 1);
 
     labels.forEach(({ el, angle }) => {
       const baseRadius = 110;
@@ -630,13 +608,21 @@ function updateKeywordLabels(timeSec) {
   });
 }
 
+
 // ===============================
 // 4-C. 기억 노드 생성
 // ===============================
 function createMemoryNodes() {
+  const EXPAND_FACTOR = 1.2; // 숫자 올리면 더 멀리 떨어짐 (1.3~2.0 사이로 취향대로)
+
   MEMORY_NODES.forEach((nodeData) => {
     const group = new THREE.Group();
-    group.position.copy(nodeData.position);
+
+    // ✅ 원래 좌표에서 바깥으로 조금 더 밀어내기
+    const basePos = nodeData.position.clone();
+    const expandedPos = basePos.multiplyScalar(EXPAND_FACTOR);
+    group.position.copy(expandedPos);
+
 
     const coreStyle = nodeData.coreStyle || {};
     const satStyle = nodeData.satelliteStyle || {};
@@ -802,79 +788,251 @@ function createMemoryNodes() {
   });
 }
 
+function resetBrainForExploration() {
+  if (!brainRoot) return;
+
+  // 혹시 남아있을 트윈/좌표 조작 싹 끊기
+  gsap.killTweensOf(brainRoot.position);
+  gsap.killTweensOf(brainRoot.rotation);
+  gsap.killTweensOf(brainRoot.scale);
+
+  const p = EXPLORATION_POSE.pos;
+  const r = EXPLORATION_POSE.rot;
+  const s = EXPLORATION_POSE.scale;
+
+  // 🔁 탐사용 기본 위치/각도로 “스냅 리셋”
+  brainRoot.position.set(p.x, p.y, p.z);
+  brainRoot.rotation.set(r.x, r.y, r.z);
+  brainRoot.scale.set(s, s, s);
+}
+
+
 // ===============================
 // 5. 뇌 GLTF 모델 로드
 // ===============================
 function loadBrainModel() {
   const loader = new GLTFLoader();
 
-  loader.load(
-    "models/scene.gltf",
-    (gltf) => {
-      const model = gltf.scene;
+  loader.load("models/scene.gltf", (gltf) => {
+    const model = gltf.scene;
 
-      pointsGroup = new THREE.Group();
-      const linesGroup = new THREE.Group();
+    // 🔹 모델 전체 transform bake 전에 확정
+    model.updateMatrixWorld(true);
 
-      model.traverse((object) => {
-        if (object.isMesh) {
-          const pointsMaterial = new THREE.PointsMaterial({
-            color: 0xffffff,
-            size: 0.03,
-            blending: THREE.AdditiveBlending,
-            transparent: true,
-            opacity: 0.75,
-            sizeAttenuation: true,
-          });
-          const points = new THREE.Points(object.geometry, pointsMaterial);
-          pointsGroup.add(points);
+    // 뇌 전체 그룹
+    brainRoot = new THREE.Group();
+    brainRoot.name = "brainRoot";
 
-          const lineMaterial = new THREE.LineBasicMaterial({
-            color: 0xffffff,
-            transparent: true,
-            opacity: 0.1,
-          });
-          const wireframeGeom = new THREE.WireframeGeometry(object.geometry);
-          const lines = new THREE.LineSegments(wireframeGeom, lineMaterial);
-          linesGroup.add(lines);
+    pointsGroup = new THREE.Group();
+    pointsGroup.name = "brainPoints";
 
-          object.visible = false;
-        }
+    const linesGroup = new THREE.Group();
+    linesGroup.name = "brainLines";
+
+    model.traverse((object) => {
+      if (!object.isMesh) return;
+
+      // 🔥 geometry를 월드 좌표 기준으로 완전히 bake
+      const baked = object.geometry.clone();
+      baked.applyMatrix4(object.matrixWorld);
+
+      // ==== POINTS ====
+      const pm = new THREE.PointsMaterial({
+        color: 0xffffff,
+        size: 0.03,
+        blending: THREE.AdditiveBlending,
+        transparent: true,
+        opacity: 0.03,
+        sizeAttenuation: true,
+        depthWrite: false,
       });
+      const pts = new THREE.Points(baked, pm);
+      pointsGroup.add(pts);
 
-      pointsGroup.rotation.x = -Math.PI / 2;
-      linesGroup.rotation.x = -Math.PI / 2;
+      // ==== WIREFRAME ====
+      const wf = new THREE.WireframeGeometry(baked);
+      const lm = new THREE.LineBasicMaterial({
+        color: 0xffffff,
+        transparent: true,
+        opacity: 0.03,
+        depthWrite: false,
+      });
+      const lineMesh = new THREE.LineSegments(wf, lm);
+      linesGroup.add(lineMesh);
 
-      scene.add(pointsGroup);
-      scene.add(linesGroup);
+      // 원본은 숨기기
+      object.visible = false;
+    });
 
-      createMemoryNodes();
+    // 🔥 baked 된 geometry들에만 회전/위치/스케일 적용
+    brainRoot.rotation.x = -Math.PI / 2;
+    brainRoot.position.set(0, 0, 0);
+    brainRoot.scale.set(1, 1, 1);
 
-      const startScreen = document.getElementById("start-screen");
-      if (startScreen) {
-        startScreen.addEventListener("click", startExploration);
+    brainRoot.add(pointsGroup);
+    brainRoot.add(linesGroup);
+    scene.add(brainRoot);
+
+    // depth 문제 보정
+    brainRoot.traverse((obj) => {
+      if (obj.material) {
+        obj.material.depthTest = true;
+        obj.material.depthWrite = false;
+      }
+    });
+
+    // ❌ 스크롤 구간에서는 기억 노드 안 만들고, 뇌만 “배경 오브젝트”로 사용
+    // createMemoryNodes();
+
+    // ❌ 섹션별 포즈 없음 → 처음엔 기본 포즈로만 두기
+    goToScenePose("hero");
+
+    // 시작 화면 클릭 이벤트 (있으면 사용, 없어도 무관)
+    const startScreen = document.getElementById("start-screen");
+    if (startScreen) {
+      startScreen.addEventListener("click", startExploration);
+    }
+  });
+}
+
+// ===============================
+// 스크롤 섹션 → 브레인 포즈 전환
+// ===============================
+// ===============================
+// 스크롤 섹션 → 브레인 포즈 전환 (스냅 느낌으로 빠르게)
+// ===============================
+function goToScenePose(key, sectionId) {
+  if (!brainRoot) return;
+  if (isExploring) return;
+
+  const pose = SCENE_POSES[key];
+  if (!pose) return;
+
+  const { brainPos, brainRot } = pose;
+
+  gsap.to(brainRoot.position, {
+    x: brainPos.x,
+    y: brainPos.y,
+    z: brainPos.z,
+    duration: 1.2,
+    ease: "power2.out",
+    overwrite: "auto",
+    onComplete: () => {
+      if (sectionId) {
+        setActiveSection(sectionId); // 🔥 뇌가 도달한 뒤에 HUD 켜기
       }
     },
-    undefined,
-    (error) => {
-      console.error("모델 로딩 중 에러:", error);
+  });
+
+  gsap.to(brainRoot.rotation, {
+    x: brainRot.x,
+    y: brainRot.y,
+    z: brainRot.z,
+    duration: 0.55,
+    ease: "power2.out",
+    overwrite: "auto",
+  });
+}
+
+
+function setActiveSection(activeId) {
+  const allSections = document.querySelectorAll(".nv-section");
+  allSections.forEach((sec) => {
+    if (sec.id === activeId) {
+      sec.classList.add("is-active");
+    } else {
+      sec.classList.remove("is-active");
+    }
+  });
+}
+
+
+// ===============================
+// 섹션 진입 감지 (IntersectionObserver)
+// ===============================
+function setupScrollScenes() {
+  if (typeof IntersectionObserver === "undefined") return;
+  if (!document.getElementById("hero")) return; // 섹션 없으면 그냥 종료
+
+  const hero = document.getElementById("hero");
+  const sec1 = document.getElementById("sec-1");
+  const sec2 = document.getElementById("sec-2");
+  const sec3 = document.getElementById("sec-3");
+
+  const sections = [hero, sec1, sec2, sec3].filter(Boolean);
+
+  // 처음 로드 시 hero 활성화
+  setActiveSection("hero");
+
+  const io = new IntersectionObserver(
+    (entries) => {
+      if (isExploring) return; // 탐사 모드 들어가면 더 이상 스크롤 연동 안 함
+
+      entries.forEach((entry) => {
+        if (!entry.isIntersecting) return;
+
+        const id = entry.target.id;
+
+        // 1) 뇌 포즈 스냅
+        switch (id) {
+          case "hero":
+            goToScenePose("hero");
+            break;
+          case "sec-1":
+            goToScenePose("sec1");
+            break;
+          case "sec-2":
+            goToScenePose("sec2");
+            break;
+          case "sec-3":
+            goToScenePose("sec3");
+            break;
+        }
+
+        // 2) HTML 섹션 활성화 (텍스트 on/off)
+        setActiveSection(id);
+      });
+    },
+    {
+      threshold: 0.6, // 화면의 60% 이상 보일 때 그 섹션으로 인식
     }
   );
+
+  sections.forEach((el) => io.observe(el));
+  scrollSceneObserver = io;
 }
+
+
+
 
 // ===============================
 // 6. 탐사 시작
 // ===============================
 function startExploration() {
+  document.body.style.overflow = "hidden";
+  isExploring = true; // 이 순간부터는 섹션-스크롤 포즈 연동 끔
+
+  // 스크롤 연동 끊기 (지금은 사실 아무것도 안 하긴 함)
+  if (scrollSceneObserver) {
+    scrollSceneObserver.disconnect();
+    scrollSceneObserver = null;
+  }
+
+   if (brainRoot) {
+    resetBrainForExploration();
+  }
+  
+
   const startScreen = document.getElementById("start-screen");
   const titleBox = document.getElementById("title-box");
   const subtitleBox = document.getElementById("subtitle-box");
   const hud = document.getElementById("hud");
-  const devConsole = document.getElementById("dev-console");
+  const devConsole = ensureDevConsoleOnTop();
   const fpUi = document.getElementById("fp-ui");
 
   const tl = gsap.timeline();
 
+  // 시작 오버레이/타이틀 내려가면서 사라지기
   [startScreen, titleBox, subtitleBox].forEach((el) => {
     if (!el) return;
     tl.to(
@@ -892,6 +1050,7 @@ function startExploration() {
     );
   });
 
+  // 카메라 뇌 쪽으로 줌인
   tl.to(
     camera.position,
     {
@@ -901,8 +1060,8 @@ function startExploration() {
       duration: 4,
       ease: "power3.inOut",
       onUpdate: () => {
-        if (pointsGroup) {
-          camera.lookAt(pointsGroup.position);
+        if (brainRoot) {
+          camera.lookAt(brainRoot.position);
         } else {
           camera.lookAt(0, 0, 0);
         }
@@ -911,9 +1070,10 @@ function startExploration() {
     0.1
   );
 
-  if (pointsGroup) {
+  // 뇌 살짝 확대 (brainRoot 기준으로 수정)
+  if (brainRoot) {
     tl.to(
-      pointsGroup.scale,
+      brainRoot.scale,
       {
         x: 1.2,
         y: 1.2,
@@ -925,17 +1085,19 @@ function startExploration() {
     );
   }
 
+  // 🔥 줌인 끝나고 HUD + 콘솔 등장 + 기억 노드 생성
   tl.call(() => {
     setupControls();
 
     if (fpUi) {
       fpUi.classList.add("active");
+      fpUi.style.opacity = 1;
     }
 
+    // HUD + 사이드 패널만 같이
     const uiToShow = [];
     if (hud) uiToShow.push(hud);
-    if (devConsole) uiToShow.push(devConsole);
-    if (sidePanel) uiToShow.push(sidePanel);
+    if (sidePanel) uiToShow.push(sidePanel); // 우측 COORD 패널
 
     if (uiToShow.length > 0) {
       gsap.fromTo(
@@ -951,6 +1113,30 @@ function startExploration() {
           },
         }
       );
+    }
+
+    // 🔥 DEV 콘솔은 따로 강제 표시 (HUD 묶음에서 분리)
+    if (devConsole) {
+      devConsole.style.display = "block";
+      gsap.fromTo(
+        devConsole,
+        { opacity: 0, y: 20 },
+        {
+          opacity: 1,
+          y: 0,
+          duration: 0.45,
+          ease: "power2.out",
+          onStart: () => {
+            devConsole.style.pointerEvents = "auto";
+          },
+        }
+      );
+    }
+
+    // 🔹 여기서 처음으로 기억 노드 생성
+    if (!memoryNodesCreated) {
+      createMemoryNodes();
+      memoryNodesCreated = true;
     }
   });
 }
@@ -969,7 +1155,9 @@ function setupControls() {
   controls.minDistance = 25;
   controls.maxDistance = 140;
 
-  if (pointsGroup) {
+  if (brainRoot) {
+    controls.target.copy(brainRoot.position);
+  } else if (pointsGroup) {
     controls.target.copy(pointsGroup.position);
   } else {
     controls.target.set(0, 0, 0);
@@ -1011,7 +1199,8 @@ function onKeyUp(event) {
 let hoveredNode = null;
 
 function onCanvasMouseMove(event) {
-  if (isDashboardOpen.value) return;
+  // 3D 탐사 모드가 아니면 노드 호버 처리 안 함
+  if (!isExploring || isDashboardOpen.value) return;
 
   mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
   mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
@@ -1104,6 +1293,41 @@ function handleMovement() {
     controls.target.add(appliedDelta);
   }
 }
+
+// 🔹 카메라의 뇌 기준 로컬 좌표로부터 어느 엽인지 판정
+function getLobeFromLocalPos(local) {
+  // 이 기준은 대충 예시고, 나중에 직접 움직여 보면서 값 조정하기!
+  if (local.z > 15) return LOBES.frontal;      // 앞쪽 = 전두엽
+  if (local.z < -15) return LOBES.occipital;   // 뒤쪽 = 후두엽
+
+  // 앞/뒤 애매한 중앙이라면 위/아래로 두정/측두 나누기
+  if (local.y > 10) return LOBES.parietal;     // 위 = 두정엽
+  if (local.y < -5) return LOBES.temporal;     // 아래 = 측두엽
+
+  return null;
+}
+
+function showLobeBanner(lobe) {
+  if (!lobe || !lobeBanner) return;
+
+  lobeBanner.textContent = `${lobe.label} 진입`;
+
+  if (lobeBannerTimer) {
+    clearTimeout(lobeBannerTimer);
+    lobeBannerTimer = null;
+  }
+
+  // 등장
+  lobeBanner.classList.add("show");
+
+  // 1.4초 뒤에 자동으로 다시 숨기기
+  lobeBannerTimer = setTimeout(() => {
+    lobeBanner.classList.remove("show");
+    lobeBannerTimer = null;
+  }, 1400);
+}
+
+
 
 // ===============================
 // 11. HUD 업데이트 (좌표 + 깊이 + 노드 거리)
@@ -1212,12 +1436,12 @@ function startClock() {
   setInterval(update, 1000);
 }
 
-
 // ===============================
 // 13. 캔버스 클릭 → 노드 선택
 // ===============================
 function onCanvasClick(event) {
-  if (isDashboardOpen.value) return;
+  // 3D 모드 아니면 클릭으로 노드 안 열림
+  if (!isExploring || isDashboardOpen.value) return;
 
   mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
   mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
@@ -1406,6 +1630,8 @@ function buildDashboardForNode(node) {
     }
   }
 
+  // ... 위쪽 내용 그대로 두고 ...
+
   if (orbitWrap) {
     orbitWrap.innerHTML = "";
 
@@ -1414,7 +1640,18 @@ function buildDashboardForNode(node) {
       const radius = 38;
 
       data.keywords.forEach((k, idx) => {
-        const labelText = typeof k === "string" ? k : k.label;
+        // label 처리 (배열이면 첫 번째만)
+        let labelText;
+        if (typeof k === "string") {
+          labelText = k;
+        } else {
+          if (Array.isArray(k.label)) {
+            labelText = k.label[0] ?? "";
+          } else {
+            labelText = k.label ?? "";
+          }
+        }
+
         const imgPath = typeof k === "string" ? null : k.image;
         const summaryOverride =
           typeof k === "string" ? null : k.summary || k.summaryText || null;
@@ -1437,16 +1674,14 @@ function buildDashboardForNode(node) {
         btn.style.pointerEvents = "auto";
         btn.style.zIndex = "4";
 
-        if (idx === 0) {
-          btn.classList.add("active");
-        }
-
         btn.addEventListener("click", () => {
+          // 활성 버튼 토글
           orbitWrap
             .querySelectorAll(".dash-orbit-label.active")
             .forEach((el) => el.classList.remove("active"));
           btn.classList.add("active");
 
+          // 📷 이미지 변경
           if (photoEl) {
             const targetImg =
               imgPath ||
@@ -1458,9 +1693,12 @@ function buildDashboardForNode(node) {
               "";
             if (targetImg) {
               photoEl.src = targetImg;
+            } else {
+              photoEl.removeAttribute("src");
             }
           }
 
+          // 🧠 요약 문구 타자기 효과
           if (summaryOverride != null) {
             typeSummaryText(summaryOverride);
             if (mainTextEl) {
@@ -1470,6 +1708,7 @@ function buildDashboardForNode(node) {
             typeSummaryText(mainTextEl.dataset.fullText || summaryText);
           }
 
+          // 📄 본문 내용 변경
           if (bodyEl) {
             if (descOverride) {
               bodyEl.innerHTML = descOverride;
@@ -1479,11 +1718,23 @@ function buildDashboardForNode(node) {
           }
         });
 
+        // 첫 번째 버튼은 기본 active만 먼저 달아둠
+        if (idx === 0) {
+          btn.classList.add("active");
+        }
+
         orbitWrap.appendChild(btn);
       });
+
+      // 🔥 첫 번째 키워드 버튼을 강제로 한 번 클릭 → 기본 이미지/요약 세팅
+      const firstBtn = orbitWrap.querySelector(".dash-orbit-label");
+      if (firstBtn) {
+        firstBtn.click();
+      }
     }
   }
 }
+
 
 // ===============================
 // 16. 대시보드 오픈 + 등장 애니메이션
@@ -1567,7 +1818,7 @@ function openDashboardWithAnimation(node) {
   const fpUi = document.getElementById("fp-ui");
   const preview = document.getElementById("node-preview");
   const img = document.getElementById("node-preview-img");
-  const devConsole = document.getElementById("dev-console");
+  const devConsole = ensureDevConsoleOnTop();
   const sidePanelLocal = document.querySelector(".fp-side-panel");
 
   if (!overlay || !contentDiv) return;
@@ -1679,7 +1930,7 @@ function closeDashboard() {
   const overlay = document.getElementById("dashboard-overlay");
   const hud = document.getElementById("hud");
   const fpUi = document.getElementById("fp-ui");
-  const devConsole = document.getElementById("dev-console");
+  const devConsole = ensureDevConsoleOnTop();
   const content = document.getElementById("dashboard-content");
   const sidePanelLocal = document.querySelector(".fp-side-panel");
 
@@ -1805,21 +2056,36 @@ function animate() {
 
   const timeSec = performance.now() * 0.001;
 
+  // 별 배경 회전
   if (starfield) {
     starfield.rotation.x += starSpeed.x;
     starfield.rotation.y += starSpeed.y;
   }
 
+  // 🔥 스크롤 인트로 구간: 뇌가 빙글빙글 돌지 않고,
+  //    아주 미세하게 "숨 쉬는" 느낌으로만 디용디용
+  if (!isExploring && brainRoot) {
+    const breath = 1 + Math.sin(timeSec * 0.8) * 0.015; // 1.5% 정도만 변화
+    brainRoot.scale.set(breath, breath, breath);
+    // rotation은 건들지 않음 (SCENE_POSES에서 잡아준 각도만 유지)
+  }
+
+  // 3D 탐사 모드일 때 카메라 이동 + OrbitControls
   if (controls) {
     controls.update();
     handleMovement();
   }
 
+
+
+  // HUD / 노드 라벨 업데이트
   updateHUD();
   updateKeywordLabels(timeSec);
 
+  // 메인 씬 렌더
   renderer.render(scene, camera);
 
+  // 대시보드 미니 3D 씬 렌더
   if (miniScene && miniRenderer && miniCamera && miniNodeRoot) {
     miniNodeRoot.rotation.y += 0.01;
     miniNodeRoot.rotation.x += 0.003;
@@ -1845,6 +2111,7 @@ function animate() {
     miniRenderer.render(miniScene, miniCamera);
   }
 }
+
 
 // ===============================
 // 19. 창 크기 변경 대응
@@ -1912,19 +2179,27 @@ function applyDevCall(obj, method, args) {
     return;
   }
 
-  if (obj === "brain" && pointsGroup) {
+  // 🔦 밝기 조정: dev 콘솔에서 scene.dim(0.5) 이런 식으로 쓰면 됨
+  if (obj === "scene" && method === "dim" && typeof args[0] === "number") {
+    const v = Math.max(0.1, Math.min(2, args[0]));
+    renderer.toneMappingExposure = v;
+    return;
+  }
+
+  // brain 명령은 brainRoot 기준으로 통일
+  if (obj === "brain" && brainRoot) {
     if (method === "moveTo") {
       const [x, y, z] = args;
-      if (typeof x === "number") pointsGroup.position.x = x;
-      if (typeof y === "number") pointsGroup.position.y = y;
-      if (typeof z === "number") pointsGroup.position.z = z;
+      if (typeof x === "number") brainRoot.position.x = x;
+      if (typeof y === "number") brainRoot.position.y = y;
+      if (typeof z === "number") brainRoot.position.z = z;
       return;
     }
     if (method === "offset") {
       const [dx, dy, dz] = args;
-      if (typeof dx === "number") pointsGroup.position.x += dx;
-      if (typeof dy === "number") pointsGroup.position.y += dy;
-      if (typeof dz === "number") pointsGroup.position.z += dz;
+      if (typeof dx === "number") brainRoot.position.x += dx;
+      if (typeof dy === "number") brainRoot.position.y += dy;
+      if (typeof dz === "number") brainRoot.position.z += dz;
       return;
     }
   }
@@ -1949,3 +2224,72 @@ function applyDevCall(obj, method, args) {
     return;
   }
 }
+
+// ======================================
+// 21. 스크롤 인트로 → 3D 모드 진입 버튼
+// ======================================
+
+// ENTER NEUROVERSE 버튼 클릭 시 3D 탐사 시작
+const enterBtn = document.getElementById("enter-neuroverse");
+if (enterBtn) {
+  enterBtn.addEventListener("click", () => {
+    const shell = document.getElementById("site-shell");
+
+    // 인트로 섹션 페이드아웃 + 위로 살짝 밀어 올리기
+    if (shell) {
+      gsap.to(shell, {
+        opacity: 0,
+        y: -80,
+        duration: 0.9,
+        ease: "power3.inOut",
+        onComplete: () => {
+          shell.style.display = "none";
+        },
+      });
+    }
+
+    // 이제부터는 3D 탐사 모드라서 스크롤 잠금
+    document.body.style.overflow = "hidden";
+
+    // 기존에 쓰던 카메라 줌인 + HUD 등장 애니메이션
+    startExploration();
+  });
+}
+
+const exitBtn = document.getElementById("exit-neuroverse");
+if (exitBtn) {
+  exitBtn.style.pointerEvents = "auto";
+  exitBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    exitNeuroverse();
+  });
+}
+
+// ======================================
+// X. 3D 탐사 모드 종료 (EXIT 버튼)
+// ======================================
+function exitNeuroverse() {
+  // 살짝 페이드아웃 줄 거면 이 정도만
+  const hud = document.getElementById("hud");
+  const fpUi = document.getElementById("fp-ui");
+  const devConsole = document.getElementById("dev-console");
+  const overlay = document.getElementById("dashboard-overlay");
+
+  const targets = [hud, fpUi, devConsole, overlay].filter(Boolean);
+
+  if (targets.length > 0 && typeof gsap !== "undefined") {
+    gsap.to(targets, {
+      opacity: 0,
+      duration: 0.35,
+      ease: "power2.inOut",
+      onComplete: () => {
+        // 🔥 진짜 리셋: 완전 처음 상태로
+        window.location.reload();
+      },
+    });
+  } else {
+    // gsap 없어도 바로 리로드
+    window.location.reload();
+  }
+}
+
